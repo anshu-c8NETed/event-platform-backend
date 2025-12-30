@@ -9,18 +9,26 @@ router.get('/dashboard', protect, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // Get events created by user
+    // Get events created by user with organizer populated
     const createdEvents = await Event.find({ organizer: userId })
       .sort('-createdAt')
-      .limit(5);
+      .populate('organizer', 'name email avatar');
 
-    // Get events user is attending
+    // Get events user is attending with full event details
     const rsvps = await RSVP.find({ user: userId, status: 'confirmed' })
-      .populate('event')
-      .sort('-createdAt')
-      .limit(5);
+      .populate({
+        path: 'event',
+        populate: {
+          path: 'organizer',
+          select: 'name email avatar'
+        }
+      })
+      .sort('-createdAt');
 
-    const attendingEvents = rsvps.map(rsvp => rsvp.event);
+    // Filter out null events (deleted events) and extract event objects
+    const attendingEvents = rsvps
+      .filter(rsvp => rsvp.event !== null)
+      .map(rsvp => rsvp.event);
 
     // Get statistics
     const stats = {
@@ -30,7 +38,8 @@ router.get('/dashboard', protect, async (req, res) => {
         organizer: userId,
         date: { $gte: new Date() },
         status: 'upcoming'
-      })
+      }),
+      totalAttendees: createdEvents.reduce((sum, event) => sum + event.currentAttendees, 0)
     };
 
     res.json({
